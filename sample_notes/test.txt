@@ -1,0 +1,15 @@
+ENCOUNTER NOTE
+
+Patient: 55-year-old female
+Date of service: [DOS]
+Provider: [Attending]
+
+Chief complaint: Follow-up for elevated liver enzymes.
+
+History of present illness: Referred for persistently elevated ALT/AST over the past year. Denies alcohol use (confirmed less than 1 drink/week). BMI 34. History of type 2 diabetes.
+
+Diagnostics: Liver biopsy performed given persistent enzyme elevation and elevated FIB-4 score. Pathology shows hepatocellular steatosis with lobular inflammation, hepatocyte ballooning degeneration, and stage 1 fibrosis -- findings consistent with steatohepatitis, not simple fatty liver.
+
+Assessment: Nonalcoholic steatohepatitis (NASH), confirmed by biopsy, with stage 1 hepatic fibrosis.
+
+Plan: Weight management program referral. Diabetes optimization. Hepatology follow-up in 6 months with repeat labs.

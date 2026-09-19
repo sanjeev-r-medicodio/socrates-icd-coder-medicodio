@@ -1,0 +1,28 @@
+[
+  {
+    "description": "Unambiguous exact match -- long diagnosis statement should collapse to a single result",
+    "query": "Type 2 diabetes mellitus with diabetic polyneuropathy",
+    "expected_code": "E11.42",
+    "mode": "single"
+  },
+  {
+    "description": "Synonym expansion -- acronym should surface the canonical condition family",
+    "query": "COPD",
+    "expected_code": "J44.9",
+    "mode": "member"
+  },
+  {
+    "description": "Laterality filter -- 'left' should be stripped and applied as a post-filter",
+    "query": "left cataract",
+    "expected_code": "H26.492",
+    "mode": "member",
+    "expect_laterality": "left"
+  },
+  {
+    "description": "Index dash-expansion mechanism -- bare 'hip pain' should expand M25.55- to its billable children and surface them, not collapse to one result",
+    "query": "hip pain",
+    "expected_code": "M25.551",
+    "mode": "member",
+    "expect_list": true
+  }
+]
