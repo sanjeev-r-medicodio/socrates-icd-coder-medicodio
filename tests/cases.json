@@ -24,5 +24,72 @@
     "expected_code": "M25.551",
     "mode": "member",
     "expect_list": true
+  },
+  {
+    "description": "Specific site + laterality should rank the matching code first, not a generic code whose Excludes note mentions 'pain'",
+    "query": "pain in right hip",
+    "expected_code": "M25.551",
+    "mode": "top",
+    "known_issue": "excludes-note text boosts the code that excludes it (R52 ranks first)"
+  },
+  {
+    "description": "7th-character code (injury, initial encounter) must be reachable",
+    "query": "fracture of unspecified part of neck of right femur, initial encounter for closed fracture",
+    "expected_code": "S72.001A",
+    "mode": "member",
+    "known_issue": "7th-character codes are not generated from the order file"
+  },
+  {
+    "description": "7th-character code with placeholder X (poisoning) must be reachable",
+    "query": "poisoning by heroin, accidental, initial encounter",
+    "expected_code": "T40.1X1A",
+    "mode": "member",
+    "known_issue": "7th-character codes are not generated from the order file"
+  },
+  {
+    "description": "Placeholder-X injury code must be reachable",
+    "query": "open wound of scalp, initial encounter",
+    "expected_code": "S01.00XA",
+    "mode": "member",
+    "known_issue": "7th-character codes are not generated from the order file"
+  },
+  {
+    "description": "Combination code -- T2DM with CKD should rank E11.22 first",
+    "query": "type 2 diabetes mellitus with chronic kidney disease",
+    "expected_code": "E11.22",
+    "mode": "top"
+  },
+  {
+    "description": "'bright' must not be treated as laterality 'right'",
+    "query": "bright red blood per rectum",
+    "expected_code": "K62.5",
+    "mode": "top",
+    "expect_laterality": null
+  },
+  {
+    "description": "Sample note 01 diagnosis resolves within the candidate list",
+    "query": "acute diverticulitis of colon with bleeding",
+    "expected_code": "K57.33",
+    "mode": "member"
+  },
+  {
+    "description": "NASH acronym resolves to a single code",
+    "query": "NASH",
+    "expected_code": "K75.81",
+    "mode": "single"
+  },
+  {
+    "description": "Knee pain with laterality stays within the right-side codes",
+    "query": "right knee pain",
+    "expected_code": "M25.561",
+    "mode": "member",
+    "expect_laterality": "right"
+  },
+  {
+    "description": "Colloquial term 'ingrown' should reach the Index entry 'Ingrowing nail'",
+    "query": "ingrown toenail with infection",
+    "expected_code": "L60.0",
+    "mode": "member",
+    "known_issue": "vocabulary gap: porter stemming does not map 'ingrown' to 'ingrowing'"
   }
 ]

@@ -1,7 +1,9 @@
 .env
 .venv/
+.venv-*/
 __pycache__/
 *.pyc
 data/icd10.db
 clarify.log
 .claude/
+.pytest_cache/
