@@ -48,8 +48,7 @@
     "description": "Adjective form 'femoral neck' should reach femur fracture codes",
     "query": "closed fracture of right femoral neck, initial encounter",
     "expected_code": "S72.001A",
-    "mode": "member",
-    "known_issue": "vocabulary gap: 'femoral' is not mapped to 'femur' (Index term 'Fracture, femur, neck')"
+    "mode": "member"
   },
   {
     "description": "7th-character code with placeholder X (poisoning) must be reachable",
@@ -101,5 +100,26 @@
     "expected_code": "L60.0",
     "mode": "member",
     "known_issue": "vocabulary gap: porter stemming does not map 'ingrown' to 'ingrowing'"
+  },
+  {
+    "description": "Documented side drops the unspecified-side sibling (code to highest specificity)",
+    "query": "right knee pain",
+    "expected_code": "M25.561",
+    "mode": "top",
+    "expect_laterality": "right"
+  },
+  {
+    "description": "Structured laterality from the caller filters like parsed laterality",
+    "query": "knee pain",
+    "laterality": "left",
+    "expected_code": "M25.562",
+    "mode": "top"
+  },
+  {
+    "description": "Structured encounter keeps only matching 7th characters",
+    "query": "fracture of neck of right femur",
+    "encounter": "subsequent",
+    "expected_code": "S72.001D",
+    "mode": "member"
   }
 ]

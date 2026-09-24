@@ -53,5 +53,7 @@ def _param(case):
 
 @pytest.mark.parametrize("case", [_param(c) for c in CASES])
 def test_search_case(case, db_path):
-    ok, detail = check_case(case, search(case["query"], db_path=db_path))
+    result = search(case["query"], db_path=db_path,
+                    laterality=case.get("laterality"), encounter=case.get("encounter"))
+    ok, detail = check_case(case, result)
     assert ok, f"{case['description']}: {detail}"

@@ -148,14 +148,20 @@ fails if it starts passing until the field is removed.
      acquired") only means something combined with its parent term, which
      isn't captured in that row's own text, so following its cross-reference
      on the word alone is untrustworthy.
-6. Apply the laterality/encounter-type post-filter to the resolved candidate
-   set. The filter is only trusted if at least one candidate *at the top
-   score* survives it (not just some low-relevance candidate elsewhere in the
-   list) -- otherwise it falls back to the unfiltered set. This matters
-   because ties are common (e.g. right/left/bilateral/unspecified variants of
-   the same match often score identically), so checking only a single
-   arbitrarily-chosen "top" candidate would let which side happens to sort
-   first silently decide whether the whole filter applies.
+6. Apply the laterality/encounter-type post-filter. Laterality and encounter
+   come from the query text, or from `search(..., laterality=, encounter=)`
+   when the caller already has them as structured fields (these win).
+   - A code is dropped only if it *contradicts* the documented value: its
+     title names a different side (whole words, so "bright"/"cleft" are not
+     sides), or its 7th character is a different encounter type. Codes with
+     no side or no 7th character (e.g. "Unspecified cataract", pneumonia)
+     stay, since their family may have no such axis.
+   - With the side documented, a no-side code is dropped when a sibling
+     under the same parent names that side (M25.569 "unspecified knee" goes
+     when M25.561 "right knee" is a candidate) -- code to the highest
+     documented specificity.
+   - If every candidate conflicts, the unfiltered set is kept, with a reason
+     saying the filter wasn't applied.
 7. Re-rank: candidates whose title/description matches the query near-verbatim
    get a large boost (only when the query is multi-word, or the title itself
    is short -- a single-word query being a substring of nearly any title

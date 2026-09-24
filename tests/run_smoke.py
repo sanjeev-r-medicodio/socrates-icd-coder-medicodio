@@ -23,7 +23,8 @@ def main():
     cases = json.loads(CASES_PATH.read_text())
     bad = 0
     for case in cases:
-        ok, detail = check_case(case, search(case["query"]))
+        ok, detail = check_case(case, search(case["query"], laterality=case.get("laterality"),
+                                             encounter=case.get("encounter")))
         known = case.get("known_issue")
         if known:
             status = "XPASS" if ok else "KNOWN"

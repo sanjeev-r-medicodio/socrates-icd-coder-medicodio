@@ -51,6 +51,8 @@ NOTE_COVERAGE_STOPWORDS = {
 }
 REF_CODE_RE = re.compile(r"^[A-Z][0-9A-Z]{1,6}$")
 
+SIDE_WORD_RE = {side: re.compile(pattern, re.IGNORECASE) for side, pattern in LATERALITY_PATTERNS.items()}
+
 TOKEN_RE = re.compile(r"[a-zA-Z0-9]+")
 FTS_SPECIAL_RE = re.compile(r'["*^]')
 
@@ -316,6 +318,41 @@ def _fetch_code_display(conn, code: str):
     return {"code_formatted": row[0], "long_desc": row[1] or "", "short_title": row[2]}
 
 
+def _laterality_conflicts(text: str, laterality: str) -> bool:
+    """True when a code's title names a side, and not the requested one
+    ('Pain in left hip' for laterality 'right'). Whole words only, so
+    'bright' / 'cleft' are not sides. A title naming no side at all
+    ('Unspecified cataract', 'Pneumonia') never conflicts -- the code family
+    may simply have no laterality axis."""
+    named = {side for side, rx in SIDE_WORD_RE.items() if rx.search(text)}
+    return bool(named) and laterality not in named
+
+
+def _drop_unsided_siblings(codes: list, displays: dict, laterality: str) -> list:
+    """With the side documented, drop a code that names no side when a
+    sibling under the same parent names the documented one -- e.g. drop
+    M25.569 'Pain in unspecified knee' when M25.561 'Pain in right knee' is
+    also a candidate (code to the highest documented specificity). Only
+    siblings are compared, so a no-side code with no sided sibling stays."""
+    def text(c):
+        return f"{displays[c]['short_title'] or ''} {displays[c]['long_desc']}"
+    sided_parents = {
+        displays[c]["parent_code"] for c in codes if SIDE_WORD_RE[laterality].search(text(c))
+    }
+    return [
+        c for c in codes
+        if displays[c]["parent_code"] not in sided_parents
+        or any(rx.search(text(c)) for rx in SIDE_WORD_RE.values())
+    ]
+
+
+def _encounter_conflicts(seventh_meaning: Optional[str], encounter: str) -> bool:
+    """True when a 7th-character code's extension is a different encounter
+    type (e.g. 'subsequent encounter for closed fracture ...' for 'initial').
+    Codes without a 7th character never conflict."""
+    return bool(seventh_meaning) and encounter not in seventh_meaning.lower()
+
+
 def _fetch_code_displays(conn, codes) -> dict:
     """Bulk _fetch_code_display: one query per 900 codes instead of one per
     code. A broad injury query can have >10k candidates after 7th-character
@@ -325,12 +362,18 @@ def _fetch_code_displays(conn, codes) -> dict:
     for i in range(0, len(codes), 900):
         chunk = codes[i:i + 900]
         rows = conn.execute(
-            f"SELECT code, code_formatted, long_desc, short_title FROM tabular_codes "
-            f"WHERE code IN ({','.join('?' * len(chunk))})",
+            f"""SELECT tc.code, tc.code_formatted, tc.long_desc, tc.short_title, d.meaning, tc.parent_code
+                FROM tabular_codes tc
+                LEFT JOIN seventh_char_defs d
+                       ON d.code = tc.seventh_char_source_code AND d.char_value = tc.seventh_char
+                WHERE tc.code IN ({','.join('?' * len(chunk))})""",
             chunk,
         ).fetchall()
-        for code, fmt, long_desc, short in rows:
-            out[code] = {"code_formatted": fmt, "long_desc": long_desc or "", "short_title": short}
+        for code, fmt, long_desc, short, meaning, parent in rows:
+            out[code] = {
+                "code_formatted": fmt, "long_desc": long_desc or "", "short_title": short,
+                "seventh_meaning": meaning, "parent_code": parent,
+            }
     return out
 
 
@@ -338,21 +381,39 @@ def _fetch_code_displays(conn, codes) -> dict:
 # Main pipeline
 # ---------------------------------------------------------------------------
 
-def search(diagnosis: str, db_path: Path = DB_PATH, conn: sqlite3.Connection = None) -> SearchResult:
+def search(
+    diagnosis: str,
+    db_path: Path = DB_PATH,
+    conn: sqlite3.Connection = None,
+    *,
+    laterality: Optional[str] = None,
+    encounter: Optional[str] = None,
+) -> SearchResult:
+    """`laterality` ('left' | 'right' | 'bilateral') and `encounter`
+    ('initial' | 'subsequent' | 'sequela') override whatever is parsed from
+    the query text -- for callers that already have them as structured fields
+    (e.g. an upstream diagnosis extractor)."""
+    if laterality is not None and laterality not in LATERALITY_PATTERNS:
+        raise ValueError(f"laterality must be one of {sorted(LATERALITY_PATTERNS)}, got {laterality!r}")
+    if encounter is not None and encounter not in ENCOUNTER_PATTERNS:
+        raise ValueError(f"encounter must be one of {sorted(ENCOUNTER_PATTERNS)}, got {encounter!r}")
     owns_conn = conn is None
     if owns_conn:
         conn = sqlite3.connect(db_path)
 
     try:
-        return _search_impl(diagnosis, conn)
+        return _search_impl(diagnosis, conn, laterality, encounter)
     finally:
         if owns_conn:
             conn.close()
 
 
-def _search_impl(diagnosis: str, conn: sqlite3.Connection) -> SearchResult:
+def _search_impl(diagnosis: str, conn: sqlite3.Connection, laterality_override=None,
+                 encounter_override=None) -> SearchResult:
     original_query = diagnosis
     laterality, encounter, stripped_query = _extract_filters(diagnosis)
+    laterality = laterality_override or laterality
+    encounter = encounter_override or encounter
 
     raw_tokens = _tokenize(stripped_query)
     expansion_tokens, synonym_reasons = _expand_synonyms(conn, raw_tokens)
@@ -490,40 +551,32 @@ def _search_impl(diagnosis: str, conn: sqlite3.Connection) -> SearchResult:
                 cand.add("exact", EXACT_MATCH_BOOST * 0.3, "Near-exact title match")
 
     # --- laterality / encounter-type post-filter ---
-    def passes_filter(code):
-        display = displays.get(code)
-        if display is None:
-            return False
-        text = f"{display['short_title'] or ''} {display['long_desc']}".lower()
-        if laterality and laterality not in text:
-            return False
-        if encounter and encounter not in text and (encounter != "initial" or "initial encounter" not in text):
-            return False
-        return True
+    # Drop only codes that contradict the documented side / encounter type;
+    # codes with no such axis stay. If every candidate conflicts (the search
+    # only found the other side), keep the unfiltered set rather than return
+    # nothing, and say so in the reasons.
+    def conflicts(code):
+        display = displays[code]
+        text = f"{display['short_title'] or ''} {display['long_desc']}"
+        if laterality and _laterality_conflicts(text, laterality):
+            return True
+        if encounter and _encounter_conflicts(display["seventh_meaning"], encounter):
+            return True
+        return False
 
-    filtered_codes = [c for c in candidates if passes_filter(c)]
-    # Only trust the filter if at least one candidate AT THE TOP SCORE
-    # survives it -- not just an arbitrarily-chosen single "top" code, since
-    # ties are common (e.g. right/left/bilateral/unspecified variants of the
-    # same match often score identically) and max() picking one of several
-    # tied codes at random must not decide whether the whole filter applies.
-    # If NONE of the top-tied candidates survive, that's a sign the
-    # laterality/encounter distinction doesn't actually apply to this
-    # diagnosis family (e.g. plain pneumonia codes have no laterality
-    # variant at all) and filtered_codes is non-empty only because of
-    # unrelated lower-relevance noise that happens to mention the filter
-    # word -- fall back to the unfiltered set instead.
-    top_score = max((c.score for c in candidates.values()), default=None)
-    top_tier_survives = any(candidates[c].score == top_score for c in filtered_codes)
-    if (laterality or encounter) and filtered_codes and top_tier_survives:
-        active_codes = filtered_codes
+    active_codes = [c for c in candidates if c in displays]
+    if laterality or encounter:
+        survivors = [c for c in active_codes if not conflicts(c)]
+        applied = [f for f in (laterality and f"laterality={laterality}", encounter and f"encounter={encounter}") if f]
+        if survivors and laterality:
+            survivors = _drop_unsided_siblings(survivors, displays, laterality)
+        if survivors:
+            active_codes = survivors
+            note = f"Filter applied: {', '.join(applied)}"
+        else:
+            note = f"Filter not applied (every candidate conflicts): {', '.join(applied)}"
         for code in active_codes:
-            if laterality:
-                candidates[code].add("filter_laterality", 0.0, f"Laterality filter applied: {laterality}")
-            if encounter:
-                candidates[code].add("filter_encounter", 0.0, f"Encounter-type filter applied: {encounter}")
-    else:
-        active_codes = list(candidates.keys())
+            candidates[code].add("filter", 0.0, note)
 
     # --- assemble, sort, decide single vs list ---
     scored = []
