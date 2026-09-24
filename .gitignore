@@ -3,7 +3,8 @@
 .venv-*/
 __pycache__/
 *.pyc
-data/icd10.db
+data/*.db
+data/*.db.tmp
 clarify.log
 .claude/
 .pytest_cache/

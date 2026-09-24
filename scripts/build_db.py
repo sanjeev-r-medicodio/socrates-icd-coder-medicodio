@@ -1,17 +1,22 @@
 #!/usr/bin/env python3
-"""Idempotent ETL: CMS ICD-10-CM XML/order-file sources -> data/icd10.db"""
+"""Idempotent ETL: CMS ICD-10-CM XML/order-file sources -> data/icd10_fy{N}.db
+
+One database per fiscal year (see search_engine/code_sets.py):
+
+    python scripts/build_db.py              # every year whose source files are in data/raw
+    python scripts/build_db.py --fy 2027    # one year
+"""
+import argparse
 import re
 import sqlite3
+import sys
 import xml.etree.ElementTree as ET
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
-RAW = ROOT / "data" / "raw"
-DB_PATH = ROOT / "data" / "icd10.db"
+sys.path.insert(0, str(ROOT))
 
-TABULAR_XML = RAW / "icd10cm_tabular_2027.xml"
-INDEX_XML = RAW / "icd10cm_index_2027.xml"
-ORDER_FILE = RAW / "icd10cm_order_2027.txt"
+from search_engine.code_sets import CODE_SETS, CodeSet  # noqa: E402
 
 NOTE_TAGS = [
     "includes", "excludes1", "excludes2", "codeFirst",
@@ -109,6 +114,15 @@ CREATE TABLE synonyms (
     id              INTEGER PRIMARY KEY,
     shorthand       TEXT,
     canonical_term  TEXT
+);
+
+CREATE TABLE code_set_info (
+    fiscal_year     INTEGER,
+    effective_from  TEXT,
+    effective_to    TEXT,
+    tabular_file    TEXT,
+    index_file      TEXT,
+    order_file      TEXT
 );
 
 CREATE VIRTUAL TABLE fts_tabular USING fts5(
@@ -526,20 +540,30 @@ SYNONYM_SEED = [
 # Main build
 # ---------------------------------------------------------------------------
 
-def build():
-    DB_PATH.parent.mkdir(parents=True, exist_ok=True)
-    if DB_PATH.exists():
-        DB_PATH.unlink()
+def build(cs: CodeSet):
+    db_path = cs.db_path
+    print(f"=== FY{cs.fiscal_year} ({cs.effective_from} to {cs.effective_to}) -> {db_path.name}")
+    db_path.parent.mkdir(parents=True, exist_ok=True)
+    tmp_path = db_path.with_suffix(".db.tmp")
+    if tmp_path.exists():
+        tmp_path.unlink()
 
-    conn = sqlite3.connect(DB_PATH)
+    # Built under a temporary name and moved into place at the end, so a
+    # failed build never leaves a half-built database where search looks.
+    conn = sqlite3.connect(tmp_path)
     conn.executescript(SCHEMA)
+    conn.execute(
+        "INSERT INTO code_set_info VALUES (?, ?, ?, ?, ?, ?)",
+        (cs.fiscal_year, cs.effective_from.isoformat(), cs.effective_to.isoformat(),
+         cs.tabular_xml.name, cs.index_xml.name, cs.order_file.name),
+    )
 
     print("Parsing order file...")
-    order_data = parse_order_file(ORDER_FILE)
+    order_data = parse_order_file(cs.order_file)
     print(f"  {len(order_data)} order-file entries")
 
     print("Parsing tabular XML...")
-    codes_out, notes_out, sevenchar_out = parse_tabular(TABULAR_XML, order_data)
+    codes_out, notes_out, sevenchar_out = parse_tabular(cs.tabular_xml, order_data)
     print(f"  {len(codes_out)} tabular_codes rows, {len(notes_out)} notes, {len(sevenchar_out)} 7th-char defs")
 
     print("Adding 7-character codes from the order file...")
@@ -547,7 +571,7 @@ def build():
     print(f"  {added} 7-character codes added")
 
     print("Parsing index XML...")
-    terms_out = parse_index(INDEX_XML)
+    terms_out = parse_index(cs.index_xml)
     print(f"  {len(terms_out)} index_terms rows")
 
     print("Inserting tabular_codes...")
@@ -674,8 +698,28 @@ def build():
     print(f"  index sample 'Cholera*': {mi}")
 
     conn.close()
-    print("\nDone ->", DB_PATH)
+    tmp_path.replace(db_path)
+    print("\nDone ->", db_path)
+
+
+def main():
+    ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    ap.add_argument("--fy", type=int, action="append", help="fiscal year to build (repeatable)")
+    args = ap.parse_args()
+    by_year = {cs.fiscal_year: cs for cs in CODE_SETS}
+    if args.fy:
+        unknown = sorted(set(args.fy) - set(by_year))
+        if unknown:
+            ap.error(f"unknown fiscal year(s) {unknown}; known: {sorted(by_year)}")
+        targets = [by_year[fy] for fy in args.fy]
+    else:
+        targets = [cs for cs in CODE_SETS if cs.order_file.exists()]
+    for cs in targets:
+        missing = [f.name for f in (cs.tabular_xml, cs.index_xml, cs.order_file) if not f.exists()]
+        if missing:
+            sys.exit(f"FY{cs.fiscal_year}: missing source files in data/raw: {missing}")
+        build(cs)
 
 
 if __name__ == "__main__":
-    build()
+    main()

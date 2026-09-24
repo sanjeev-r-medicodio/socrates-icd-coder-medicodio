@@ -26,11 +26,13 @@ import logging
 import re
 import sqlite3
 from dataclasses import dataclass, field
+from datetime import date
 from pathlib import Path
 from typing import Callable, List, Optional
 
 from pydantic import BaseModel
 
+from search_engine import code_sets
 from search_engine.core import DB_PATH, CodeResult, search
 
 logger = logging.getLogger("search_engine.resolver")
@@ -82,6 +84,7 @@ class Resolution:
     rounds: List[Round] = field(default_factory=list)
     remaining: List[str] = field(default_factory=list)   # dotted codes left when not resolved
     candidates_considered: int = 0
+    code_set: Optional[str] = None             # e.g. "FY2027"
 
     @property
     def seventh_character_unresolved(self) -> bool:
@@ -226,13 +229,19 @@ def resolve(
     dx: Diagnosis,
     note: str,
     *,
-    db_path: Path = DB_PATH,
+    date_of_service: Optional[date] = None,
+    db_path: Optional[Path] = None,
     clarify_fn: Callable = None,
     answer_fn: Callable = None,
 ) -> Resolution:
+    """`date_of_service` picks the fiscal-year code set in effect that day
+    (raises code_sets.UnsupportedDateOfService outside the loaded years).
+    `db_path` overrides it; with neither, today's code set is used."""
     clarify_fn = clarify_fn or default_clarify_fn
     answer_fn = answer_fn or default_answer_fn
     query = _build_query(dx)
+    if db_path is None:
+        db_path = code_sets.db_path_for(date_of_service) if date_of_service else DB_PATH
 
     conn = sqlite3.connect(f"file:{Path(db_path).as_posix()}?mode=ro", uri=True)
     try:
@@ -242,7 +251,8 @@ def resolve(
         if candidates:
             floor = candidates[0].score * CANDIDATE_SCORE_FLOOR
             candidates = [c for c in candidates if c.score >= floor]
-        res = Resolution(status="unresolved", query=query, candidates_considered=len(candidates))
+        res = Resolution(status="unresolved", query=query, candidates_considered=len(candidates),
+                         code_set=_code_set_label(conn))
         if not candidates:
             res.status = "no_candidates"
             return res
@@ -299,6 +309,11 @@ def resolve(
         return res
     finally:
         conn.close()
+
+
+def _code_set_label(conn) -> Optional[str]:
+    row = conn.execute("SELECT fiscal_year FROM code_set_info").fetchone()
+    return f"FY{row[0]}" if row else None
 
 
 def _ask(answer_fn, note, question, options):

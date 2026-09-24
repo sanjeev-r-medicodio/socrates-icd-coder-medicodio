@@ -12,7 +12,11 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Optional
 
-DB_PATH = Path(__file__).resolve().parent.parent / "data" / "icd10.db"
+from search_engine.code_sets import default_db_path
+
+# Code set in effect today (or the latest built one). Callers with a date of
+# service should pass code_sets.db_path_for(date_of_service) instead.
+DB_PATH = default_db_path()
 
 # ---------------------------------------------------------------------------
 # Tunable constants

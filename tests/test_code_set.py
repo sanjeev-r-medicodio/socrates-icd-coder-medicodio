@@ -4,11 +4,13 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "scripts"))
 
-from build_db import ORDER_FILE, parse_order_file  # noqa: E402
+from build_db import parse_order_file  # noqa: E402
+
+from search_engine.code_sets import LATEST  # noqa: E402
 
 
 def test_every_billable_order_file_code_is_billable_in_db(conn):
-    order = parse_order_file(ORDER_FILE)
+    order = parse_order_file(LATEST.order_file)
     expected = {c for c, v in order.items() if v["is_billable"]}
     actual = {r[0] for r in conn.execute("SELECT code FROM tabular_codes WHERE is_billable = 1")}
     assert expected == actual, f"missing {sorted(expected - actual)[:5]}, extra {sorted(actual - expected)[:5]}"

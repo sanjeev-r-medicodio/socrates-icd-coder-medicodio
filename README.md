@@ -45,7 +45,8 @@ quote is kept in a full trace, so you can see exactly why a code was chosen.
 
 ## Getting started
 
-1. **Build the code database** (once, from the included CMS source files):
+1. **Build the code databases** (once, from the included CMS source files --
+   one per fiscal year, FY2026 and FY2027):
    ```bash
    DYLD_LIBRARY_PATH=/opt/homebrew/opt/expat/lib python3.12 scripts/build_db.py
    ```

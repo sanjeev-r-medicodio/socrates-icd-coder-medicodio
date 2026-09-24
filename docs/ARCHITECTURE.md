@@ -6,19 +6,33 @@ each piece works internally. For the product pitch and quick-start, see
 
 ## Setup
 
-1. Place these CMS source files in `data/raw/` (already done for FY2027):
-   - `icd10cm_tabular_2027.xml`
-   - `icd10cm_index_2027.xml`
-   - `icd10cm_order_2027.txt`
-   - `icd10cm_tabular.xsd`, `icd10cm_index.xsd`, `icd10OrderFiles.pdf` (reference only)
+1. CMS source files live in `data/raw/`, one set per fiscal year (FY2026
+   and FY2027 are included):
+   - `icd10cm_tabular_{FY}.xml`, `icd10cm_index_{FY}.xml`, `icd10cm_order_{FY}.txt`
+   - `icd10cm_tabular.xsd`, `icd10cm_index.xsd`, `icd10OrderFiles.pdf` (reference only;
+     the schemas are identical across both years)
 
-2. Build the database (idempotent -- safe to re-run):
+   FY2026 came from cms.gov's "2026 Code Descriptions in Tabular Order" and
+   "2026 Code Tables, Tabular and Index" zips.
+
+2. Build the databases (idempotent -- safe to re-run):
 
    ```bash
-   DYLD_LIBRARY_PATH=/opt/homebrew/opt/expat/lib python3.12 scripts/build_db.py
+   python scripts/build_db.py            # every fiscal year with source files present
+   python scripts/build_db.py --fy 2027  # just one
    ```
 
-   This produces `data/icd10.db` and prints sanity-check spot-checks.
+   This produces `data/icd10_fy2026.db` and `data/icd10_fy2027.db` and
+   prints sanity-check spot-checks. Each is built under a temporary name and
+   moved into place only when complete. (On the macOS/Homebrew dev machine,
+   prefix with `DYLD_LIBRARY_PATH=/opt/homebrew/opt/expat/lib`.)
+
+   **Which one is used:** FY N is in effect from October 1 of year N-1 to
+   September 30 of year N, and a claim must use the codes in effect on the
+   date of service. `resolver.resolve(..., date_of_service=)` picks the
+   matching database (`search_engine/code_sets.py`); callers without a date
+   (CLI, web demo) get today's code set, or the latest built one. Tests pin
+   the latest year so they don't change on October 1.
 
    The Tabular XML lists 7th-character codes only as a stem plus a
    `sevenChrDef` table (e.g. `S72.001` + `A`/`D`/`S`/...); the full billable
@@ -56,7 +70,7 @@ each piece works internally. For the product pitch and quick-start, see
 
 ```bash
 pip install -r requirements-dev.txt
-python -m pytest                           # offline suite (needs data/icd10.db)
+python -m pytest                           # offline suite (needs the built databases)
 ICD_CODER_LIVE_TESTS=1 python -m pytest    # also runs tests that call the model
 python tests/run_smoke.py                  # quick, dependency-free view of cases.json
 ```
@@ -73,8 +87,10 @@ fails if it starts passing until the field is removed.
 ## Project structure
 
 - `data/raw/` -- CMS source XML/order file/XSDs.
-- `data/icd10.db` -- built SQLite database (Tabular + Index + FTS5), gitignored.
-- `scripts/build_db.py` -- ETL: parses the XML/order file into `data/icd10.db`.
+- `data/icd10_fy{N}.db` -- one built SQLite database per fiscal year
+  (Tabular + Index + FTS5), gitignored.
+- `scripts/build_db.py` -- ETL: parses each year's XML/order file into its database.
+- `search_engine/code_sets.py` -- fiscal-year code sets and date-of-service lookup.
 - `search_engine/core.py` -- `search(diagnosis: str) -> SearchResult`, the only
   place the query pipeline logic lives. Pure and deterministic.
 - `search_engine/clarify.py` -- `clarify(candidates) -> Optional[ClarifyQuestion]`.
