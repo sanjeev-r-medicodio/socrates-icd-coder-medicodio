@@ -86,6 +86,10 @@ fails if it starts passing until the field is removed.
   `answer_question(note, question, options)`, and the shared
   `resolve_diagnosis(note, on_status=, on_question=, on_round=)` loop used by
   both `cli_diagnosis.py` and `api.py`. See "The note-to-code loop" below.
+- `search_engine/resolver.py` -- `resolve(dx, note)`: per-diagnosis
+  note-to-code loop for an upstream pipeline. See "The resolver" below.
+- `search_engine/llm.py` -- single structured-output model call with a
+  replaceable backend (`llm.set_backend`).
 - `search_engine/_env.py` -- shared `.env` loading, used by `note_agent.py`
   (`clarify.py` predates it and keeps its own copy, deliberately untouched).
 - `cli.py` -- terminal interface for single-diagnosis search (interactive +
@@ -289,6 +293,35 @@ to interpret what the note actually says, never invent or infer something it
 doesn't state. That still matters even with no "not specified" branch -- it's
 the difference between picking the option the note actually supports versus
 the statistically likely one.
+
+## The resolver (`search_engine/resolver.py`)
+
+`resolve(Diagnosis(phrase, laterality=, encounter=, anatomical_location=), note)`
+is the per-diagnosis loop for an upstream pipeline that has already extracted
+its diagnoses. It leaves `note_agent.resolve_diagnosis()` (the demo loop)
+unchanged and differs from it in four ways:
+
+- **No count cut-off.** Candidates scoring at least `CANDIDATE_SCORE_FLOOR`
+  (50%) of the top score are kept. Above `MAX_CLARIFY_CANDIDATES` (20) they
+  are grouped by the shortest code prefix that splits them (K57 vs K62, then
+  K57.3 vs K57.9, ...) and the question is asked at that level first.
+- **"Not documented" is a valid answer** (option 0). Within one 3-character
+  category the loop then takes the highest-ranked "unspecified" code; when
+  only the 7th character is undecided it returns
+  `status="seventh_char_unresolved"` instead of guessing; across unrelated
+  families it stops `unresolved` with the remaining codes.
+- **Citations are verified** against the note (case/whitespace-insensitive).
+  An unverified or out-of-range answer is retried once.
+- **Confidence** is a transparent heuristic, not a calibrated probability:
+  0.9 for an unambiguous search result, 1.0 for a fully cited resolution,
+  minus 0.3 per unverified citation, capped at 0.5 for an unspecified
+  default.
+
+Statuses: `resolved`, `unspecified_default`, `seventh_char_unresolved`,
+`unresolved`, `no_candidates`. Model calls are injectable (`clarify_fn`,
+`answer_fn`); by default they go through `search_engine/llm.py`, whose
+backend a host can replace with `llm.set_backend(fn)`. Each call opens its
+own read-only SQLite connection, so it is safe to call from worker threads.
 
 ## The web app
 

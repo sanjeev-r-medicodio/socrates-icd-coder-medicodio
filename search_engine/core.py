@@ -403,11 +403,14 @@ def search(
     *,
     laterality: Optional[str] = None,
     encounter: Optional[str] = None,
+    max_results: Optional[int] = MAX_RESULTS,
 ) -> SearchResult:
     """`laterality` ('left' | 'right' | 'bilateral') and `encounter`
     ('initial' | 'subsequent' | 'sequela') override whatever is parsed from
     the query text -- for callers that already have them as structured fields
-    (e.g. an upstream diagnosis extractor)."""
+    (e.g. an upstream diagnosis extractor). `max_results=None` returns every
+    ranked candidate, for callers that narrow a large set in stages rather
+    than truncating it."""
     if laterality is not None and laterality not in LATERALITY_PATTERNS:
         raise ValueError(f"laterality must be one of {sorted(LATERALITY_PATTERNS)}, got {laterality!r}")
     if encounter is not None and encounter not in ENCOUNTER_PATTERNS:
@@ -417,14 +420,14 @@ def search(
         conn = sqlite3.connect(db_path)
 
     try:
-        return _search_impl(diagnosis, conn, laterality, encounter)
+        return _search_impl(diagnosis, conn, laterality, encounter, max_results)
     finally:
         if owns_conn:
             conn.close()
 
 
 def _search_impl(diagnosis: str, conn: sqlite3.Connection, laterality_override=None,
-                 encounter_override=None) -> SearchResult:
+                 encounter_override=None, max_results=MAX_RESULTS) -> SearchResult:
     original_query = diagnosis
     laterality, encounter, stripped_query = _extract_filters(diagnosis)
     laterality = laterality_override or laterality
@@ -619,5 +622,5 @@ def _search_impl(diagnosis: str, conn: sqlite3.Connection, laterality_override=N
     elif len(scored) > 1 and scored[1].score <= 0 < scored[0].score:
         is_single = True
 
-    results = scored[:1] if is_single else scored[:MAX_RESULTS]
+    results = scored[:1] if is_single else scored[:max_results]
     return SearchResult(original_query, laterality, encounter, is_single, results)
