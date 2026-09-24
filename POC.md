@@ -97,7 +97,7 @@ ICD↔CPT linking, sequencing
 |---|---|
 | P1: off-shortlist codes | Candidates come only from the code set; each option list is validated as an exact partition of the candidates. |
 | P2: compounding tree errors | There's no routing tree. Every candidate stays reachable until the chart rules it out. |
-| P3: separate 7th-character merge | Full 7-character codes (51,378 per year) are in the code set; the returned code is always billable, or flagged. |
+| P3: separate 7th-character merge | Full 7-character codes (51,305 in FY2026, 51,378 in FY2027) are in the code set; the returned code is always billable, or flagged. |
 | P4: confidence not grounded | Confidence reflects verified quotes and "not documented" defaults. The S2 ceiling can be applied as `min(confidence, ceiling)`. |
 | P5: no measurement | Comes with tests, a benchmark and live cost/accuracy scripts; section 9.3 extends them to coder-final charts. |
 | P6: hardcoded pipeline | One function, `code_diagnosis(dx, chart_text, date_of_service)`, returning the engine's S4.3 `final_result` shape. |
