@@ -13,6 +13,7 @@
 - **Why it matters.**
   - The model never proposes a code, so it cannot return one that doesn't exist or that wasn't shortlisted. That is the engine's open C3/T2 defect.
   - Each code choice comes with a trail a coder can audit: the question asked, the answer, and the quote from the chart.
+  - It is far less restrictive than the current tree / sub-tree flow. The tree commits to a chapter first, then a section, then a code, so if the chapter is picked wrong, everything that follows searches the wrong branch and can't recover. Here there is no up-front commitment: every plausible candidate from the Index and Tabular List stays in play until the chart rules it out.
 - **Results so far.**
   - 88 automated tests pass, including the live-model tests.
   - 9 of 9 end-to-end test notes come back with the expected code.
