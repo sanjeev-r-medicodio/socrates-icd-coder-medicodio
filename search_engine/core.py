@@ -167,17 +167,37 @@ def _drop_generic_tokens(conn, tokens):
     rather than search on nothing."""
     if len(tokens) <= 1:
         return tokens
-    total = conn.execute("SELECT COUNT(*) FROM tabular_codes WHERE node_type = 'diag'").fetchone()[0]
+    db_key = _db_key(conn)
+    total = _cached_count(db_key, "", lambda: conn.execute(
+        "SELECT COUNT(*) FROM tabular_codes WHERE node_type = 'diag'").fetchone()[0])
     if not total:
         return tokens
     specific = []
     for t in tokens:
-        df = conn.execute(
+        df = _cached_count(db_key, t, lambda: conn.execute(
             "SELECT COUNT(*) FROM fts_tabular WHERE fts_tabular MATCH ?", (f'"{_fts_escape(t)}"',)
-        ).fetchone()[0]
+        ).fetchone()[0])
         if df / total <= GENERIC_TOKEN_DOC_FREQ_RATIO:
             specific.append(t)
     return specific or tokens
+
+
+# Token document frequencies never change for a given DB file, and one search
+# recomputes them for every cross-reference re-search (~40x per query), so
+# they're cached per (db file, token). Plain dict: concurrent writers can only
+# race to store the same value.
+_DOC_FREQ_CACHE: dict = {}
+
+
+def _db_key(conn) -> str:
+    return conn.execute("PRAGMA database_list").fetchone()[2]
+
+
+def _cached_count(db_key: str, token: str, compute) -> int:
+    key = (db_key, token)
+    if key not in _DOC_FREQ_CACHE:
+        _DOC_FREQ_CACHE[key] = compute()
+    return _DOC_FREQ_CACHE[key]
 
 
 def _search_tabular(conn, match_query, limit=FTS_CANDIDATE_LIMIT):
@@ -228,9 +248,13 @@ def _resolve_to_billable(conn, code_or_prefix: str):
     ).fetchone()
     if row and row[1] == 1:
         return [code_or_prefix]
+    # Prefix match as a primary-key range scan. `LIKE 'X%'` is case-insensitive
+    # and can't use the index, so it scanned every row once per search hit
+    # (3-30s per query). Codes are [A-Z0-9] only and '~' sorts after both, so
+    # [prefix, prefix + '~') is exactly the set of codes starting with prefix.
     cur = conn.execute(
-        "SELECT code FROM tabular_codes WHERE code LIKE ? AND is_billable = 1",
-        (code_or_prefix + "%",),
+        "SELECT code FROM tabular_codes WHERE code >= ? AND code < ? AND is_billable = 1",
+        (code_or_prefix, code_or_prefix + "~"),
     )
     return [r[0] for r in cur.fetchall()]
 
