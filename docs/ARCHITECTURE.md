@@ -20,6 +20,14 @@ each piece works internally. For the product pitch and quick-start, see
 
    This produces `data/icd10.db` and prints sanity-check spot-checks.
 
+   The Tabular XML lists 7th-character codes only as a stem plus a
+   `sevenChrDef` table (e.g. `S72.001` + `A`/`D`/`S`/...); the full billable
+   codes (`S72.001A`, `T40.1X1A`, `S01.00XA`) exist only in the order file.
+   The build adds every one of them under its stem, with `seventh_char` set,
+   and fails if the DB's billable set doesn't match the order file exactly.
+   Generated codes are kept out of `fts_tabular` so they don't shift bm25
+   scores; search reaches them by expanding a hit on their stem.
+
 3. Set up the virtual environment (Homebrew's system Python is
    externally-managed and refuses a bare `pip install`):
 
@@ -46,18 +54,16 @@ each piece works internally. For the product pitch and quick-start, see
 
 ## Running the tests
 
-Run after any ranking change (weights/constants in `search_engine/core.py`):
-
 ```bash
-.venv/bin/python tests/run_smoke.py
+pip install -r requirements-dev.txt
+python -m pytest                           # offline suite (needs data/icd10.db)
+ICD_CODER_LIVE_TESTS=1 python -m pytest    # also runs tests that call the model
+python tests/run_smoke.py                  # quick, dependency-free view of cases.json
 ```
 
-Run after any change to `search_engine/clarify.py` (needs `DYLD_LIBRARY_PATH`
-for its live-model test cases; the third is network-free):
-
-```bash
-DYLD_LIBRARY_PATH=/opt/homebrew/opt/expat/lib .venv/bin/python tests/test_clarify.py
-```
+`tests/cases.json` is the search regression set. A case with a `known_issue`
+is a strict xfail: it documents a bug that isn't fixed yet, and the suite
+fails if it starts passing until the field is removed.
 
 ## Project structure
 
@@ -86,7 +92,10 @@ DYLD_LIBRARY_PATH=/opt/homebrew/opt/expat/lib .venv/bin/python tests/test_clarif
 - `frontend/` -- Vite + React app (two tabs: search-diagnosis, encounter-note).
 - `sample_notes/` -- unambiguous, fully-documented note paragraphs
   (diverticular disease and hip pain scenarios) used to test the loop above.
-- `tests/cases.json`, `tests/run_smoke.py` -- `core.search()` smoke tests.
+- `tests/cases.json`, `tests/test_search_cases.py`, `tests/run_smoke.py` --
+  `core.search()` regression cases (see "Running the tests").
+- `tests/test_code_set.py` -- built DB vs. the CMS order file (every billable
+  code present, 7th-character codes well-formed).
 - `tests/test_clarify.py` -- `clarify()` tests (live question quality on a
   sibling case and a large heterogeneous fan-out, plus a network-free
   forced-validation-failure case).
@@ -111,8 +120,9 @@ DYLD_LIBRARY_PATH=/opt/homebrew/opt/expat/lib .venv/bin/python tests/test_clarif
    `note_references` index (Code First / Use Additional / Code Also /
    Excludes1 / Excludes2 conditions).
 5. Resolve every hit to billable leaf code(s):
-   - a header/category code (e.g. `E08.32`, which requires a 7th character)
-     expands to all of its billable descendants;
+   - a header/category code (e.g. `E08.32`, which requires a 6th character,
+     or the stem `S72.001`, which requires a 7th) expands to all of its
+     billable descendants;
    - an Index entry whose code ends in `-` (e.g. `M25.55-`) expands the same
      way -- this is what turns a bare "hip pain" query into the
      `M25.551/552/559` list rather than a dead end;

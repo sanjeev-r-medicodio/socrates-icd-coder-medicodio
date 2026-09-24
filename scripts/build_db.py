@@ -57,6 +57,7 @@ CREATE TABLE tabular_codes (
     is_billable              INTEGER,
     has_seventh_char          INTEGER DEFAULT 0,
     seventh_char_source_code  TEXT,
+    seventh_char              TEXT,     -- set only on generated 7-character codes
     order_number              INTEGER
 );
 CREATE INDEX idx_tabular_parent ON tabular_codes(parent_code);
@@ -206,6 +207,7 @@ def walk_diag(diag_elem, parent_code, chapter_num, chapter_desc, section_id, sec
         "is_billable": od.get("is_billable"),
         "has_seventh_char": 0,
         "seventh_char_source_code": None,
+        "seventh_char": None,
         "order_number": od.get("order_number"),
     }
     codes_out[code] = row
@@ -249,6 +251,7 @@ def parse_tabular(path: Path, order_data: dict):
             "is_billable": None,
             "has_seventh_char": 0,
             "seventh_char_source_code": None,
+            "seventh_char": None,
             "order_number": None,
         }
         extract_notes(chapter, chapter_code, notes_out)
@@ -276,6 +279,7 @@ def parse_tabular(path: Path, order_data: dict):
                 "is_billable": None,
                 "has_seventh_char": 0,
                 "seventh_char_source_code": None,
+                "seventh_char": None,
                 "order_number": None,
             }
             extract_notes(section, section_code, notes_out)
@@ -304,6 +308,54 @@ def parse_tabular(path: Path, order_data: dict):
             cur = parent
 
     return codes_out, notes_out, sevenchar_out
+
+
+def add_seventh_char_codes(codes_out: dict, sevenchar_out: list, order_data: dict) -> int:
+    """Adds the full 7-character codes (e.g. S72.001A, T40.1X1A, S01.00XA).
+
+    The Tabular XML only lists the stem (S72.001) plus a sevenChrDef table; the
+    billable codes themselves exist only in the order file. Each missing
+    billable order-file code is attached under its longest existing prefix
+    (the stem) and inherits that stem's chapter/section and 7th-char source.
+    Any characters between the stem and the 7th character must be the
+    placeholder 'X'. Fails the build on anything that doesn't fit that shape,
+    so a code-set change can't silently drop codes again."""
+    valid_chars = {}
+    for src, char_value, _meaning in sevenchar_out:
+        valid_chars.setdefault(src, set()).add(char_value)
+
+    added = 0
+    for code, od in order_data.items():
+        if code in codes_out or not od["is_billable"]:
+            continue
+        stem = code[:-1]
+        while stem and stem not in codes_out:
+            stem = stem[:-1]
+        parent = codes_out.get(stem)
+        if parent is None or parent["node_type"] != "diag" or len(code) != 7:
+            raise RuntimeError(f"order-file code {code!r} has no Tabular stem")
+        source = parent["seventh_char_source_code"]
+        padding = code[len(stem):-1]
+        if not source or code[-1] not in valid_chars.get(source, ()) or set(padding) - {"X"}:
+            raise RuntimeError(
+                f"order-file code {code!r} doesn't fit stem {stem!r} "
+                f"(7th-char source {source!r}, padding {padding!r})"
+            )
+        codes_out[code] = {
+            **parent,
+            "code": code,
+            "code_formatted": f"{code[:3]}.{code[3:]}",
+            "parent_code": stem,
+            "short_title": od["short_title"],
+            "long_desc": od["long_desc"],
+            "is_placeholder": 1 if padding else 0,
+            "is_header": 0,
+            "is_billable": 1,
+            "seventh_char": code[-1],
+            "order_number": od["order_number"],
+        }
+        added += 1
+    return added
 
 
 # ---------------------------------------------------------------------------
@@ -489,6 +541,10 @@ def build():
     codes_out, notes_out, sevenchar_out = parse_tabular(TABULAR_XML, order_data)
     print(f"  {len(codes_out)} tabular_codes rows, {len(notes_out)} notes, {len(sevenchar_out)} 7th-char defs")
 
+    print("Adding 7-character codes from the order file...")
+    added = add_seventh_char_codes(codes_out, sevenchar_out, order_data)
+    print(f"  {added} 7-character codes added")
+
     print("Parsing index XML...")
     terms_out = parse_index(INDEX_XML)
     print(f"  {len(terms_out)} index_terms rows")
@@ -498,10 +554,10 @@ def build():
         """INSERT INTO tabular_codes
            (code, code_formatted, node_type, parent_code, chapter_num, chapter_desc,
             section_id, section_desc, short_title, long_desc, is_placeholder,
-            is_header, is_billable, has_seventh_char, seventh_char_source_code, order_number)
+            is_header, is_billable, has_seventh_char, seventh_char_source_code, seventh_char, order_number)
            VALUES (:code, :code_formatted, :node_type, :parent_code, :chapter_num, :chapter_desc,
                    :section_id, :section_desc, :short_title, :long_desc, :is_placeholder,
-                   :is_header, :is_billable, :has_seventh_char, :seventh_char_source_code, :order_number)""",
+                   :is_header, :is_billable, :has_seventh_char, :seventh_char_source_code, :seventh_char, :order_number)""",
         codes_out.values(),
     )
 
@@ -552,9 +608,14 @@ def build():
     )
 
     print("Building FTS5 indexes...")
+    # Generated 7-character codes stay out of the FTS index: they're reached by
+    # expanding their stem's hit to its billable descendants. Indexing them
+    # would add 51k near-duplicate long titles and shift bm25 scores (corpus
+    # size, average length) for every unrelated query.
     conn.execute(
         "INSERT INTO fts_tabular (code, short_title, long_desc) "
-        "SELECT code, COALESCE(short_title, ''), COALESCE(long_desc, '') FROM tabular_codes"
+        "SELECT code, COALESCE(short_title, ''), COALESCE(long_desc, '') FROM tabular_codes "
+        "WHERE seventh_char IS NULL"
     )
     conn.execute(
         "INSERT INTO fts_index_terms (term_id, code, term_text) "
@@ -574,8 +635,11 @@ def build():
     chapters = conn.execute("SELECT COUNT(*) FROM tabular_codes WHERE node_type='chapter'").fetchone()[0]
     sections = conn.execute("SELECT COUNT(*) FROM tabular_codes WHERE node_type='section'").fetchone()[0]
     print(f"diag codes: {total_codes}, billable: {billable}, chapters: {chapters}, sections: {sections}")
+    order_billable = sum(1 for v in order_data.values() if v["is_billable"])
+    if billable != order_billable:
+        raise RuntimeError(f"billable codes in DB ({billable}) != order file ({order_billable})")
 
-    for spot_code in ["E08321", "M25551", "A000"]:
+    for spot_code in ["E08321", "M25551", "A000", "S72001A", "T401X1A", "S0100XA"]:
         row = conn.execute(
             "SELECT code_formatted, long_desc, short_title, is_billable FROM tabular_codes WHERE code=?",
             (spot_code,),

@@ -36,22 +36,33 @@
     "description": "7th-character code (injury, initial encounter) must be reachable",
     "query": "fracture of unspecified part of neck of right femur, initial encounter for closed fracture",
     "expected_code": "S72.001A",
+    "mode": "member"
+  },
+  {
+    "description": "Plain-language fracture query reaches the 7th-character code for the initial encounter",
+    "query": "fracture of neck of right femur initial encounter",
+    "expected_code": "S72.001A",
+    "mode": "top",
+    "expect_laterality": "right"
+  },
+  {
+    "description": "Adjective form 'femoral neck' should reach femur fracture codes",
+    "query": "closed fracture of right femoral neck, initial encounter",
+    "expected_code": "S72.001A",
     "mode": "member",
-    "known_issue": "7th-character codes are not generated from the order file"
+    "known_issue": "vocabulary gap: 'femoral' is not mapped to 'femur' (Index term 'Fracture, femur, neck')"
   },
   {
     "description": "7th-character code with placeholder X (poisoning) must be reachable",
     "query": "poisoning by heroin, accidental, initial encounter",
     "expected_code": "T40.1X1A",
-    "mode": "member",
-    "known_issue": "7th-character codes are not generated from the order file"
+    "mode": "member"
   },
   {
     "description": "Placeholder-X injury code must be reachable",
     "query": "open wound of scalp, initial encounter",
     "expected_code": "S01.00XA",
-    "mode": "member",
-    "known_issue": "7th-character codes are not generated from the order file"
+    "mode": "member"
   },
   {
     "description": "Combination code -- T2DM with CKD should rank E11.22 first",

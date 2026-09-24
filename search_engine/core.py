@@ -167,15 +167,18 @@ def _drop_generic_tokens(conn, tokens):
     rather than search on nothing."""
     if len(tokens) <= 1:
         return tokens
+    # Denominator excludes the generated 7-character codes (seventh_char set),
+    # which aren't in fts_tabular either -- see scripts/build_db.py.
     db_key = _db_key(conn)
     total = _cached_count(db_key, "", lambda: conn.execute(
-        "SELECT COUNT(*) FROM tabular_codes WHERE node_type = 'diag'").fetchone()[0])
+        "SELECT COUNT(*) FROM tabular_codes WHERE node_type = 'diag' AND seventh_char IS NULL"
+    ).fetchone()[0])
     if not total:
         return tokens
     specific = []
     for t in tokens:
         df = _cached_count(db_key, t, lambda: conn.execute(
-            "SELECT COUNT(*) FROM fts_tabular WHERE fts_tabular MATCH ?", (f'"{_fts_escape(t)}"',)
+            "SELECT COUNT(*) FROM fts_tabular WHERE fts_tabular MATCH ?", (f'"{_fts_escape(t)}"',),
         ).fetchone()[0])
         if df / total <= GENERIC_TOKEN_DOC_FREQ_RATIO:
             specific.append(t)
@@ -266,6 +269,24 @@ def _fetch_code_display(conn, code: str):
     if row is None:
         return None
     return {"code_formatted": row[0], "long_desc": row[1] or "", "short_title": row[2]}
+
+
+def _fetch_code_displays(conn, codes) -> dict:
+    """Bulk _fetch_code_display: one query per 900 codes instead of one per
+    code. A broad injury query can have >10k candidates after 7th-character
+    expansion, each looked up several times during ranking."""
+    codes = list(codes)
+    out = {}
+    for i in range(0, len(codes), 900):
+        chunk = codes[i:i + 900]
+        rows = conn.execute(
+            f"SELECT code, code_formatted, long_desc, short_title FROM tabular_codes "
+            f"WHERE code IN ({','.join('?' * len(chunk))})",
+            chunk,
+        ).fetchall()
+        for code, fmt, long_desc, short in rows:
+            out[code] = {"code_formatted": fmt, "long_desc": long_desc or "", "short_title": short}
+    return out
 
 
 # ---------------------------------------------------------------------------
@@ -370,11 +391,13 @@ def _search_impl(diagnosis: str, conn: sqlite3.Connection) -> SearchResult:
             if r not in cand.reasons:
                 cand.reasons.append(r)
 
+    displays = _fetch_code_displays(conn, candidates)
+
     # --- exact / near-exact match re-rank boost ---
     normalized_query = stripped_query.strip().lower()
     if normalized_query:
         for code, cand in candidates.items():
-            display = _fetch_code_display(conn, code)
+            display = displays.get(code)
             if display is None:
                 continue
             title_texts = [
@@ -402,7 +425,7 @@ def _search_impl(diagnosis: str, conn: sqlite3.Connection) -> SearchResult:
 
     # --- laterality / encounter-type post-filter ---
     def passes_filter(code):
-        display = _fetch_code_display(conn, code)
+        display = displays.get(code)
         if display is None:
             return False
         text = f"{display['short_title'] or ''} {display['long_desc']}".lower()
@@ -439,7 +462,7 @@ def _search_impl(diagnosis: str, conn: sqlite3.Connection) -> SearchResult:
     # --- assemble, sort, decide single vs list ---
     scored = []
     for code in active_codes:
-        display = _fetch_code_display(conn, code)
+        display = displays.get(code)
         if display is None:
             continue
         cand = candidates[code]
