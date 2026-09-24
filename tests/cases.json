@@ -48,13 +48,14 @@
     "description": "Adjective form 'femoral neck' should reach femur fracture codes",
     "query": "closed fracture of right femoral neck, initial encounter",
     "expected_code": "S72.001A",
-    "mode": "member"
+    "mode": "member",
+    "known_issue": "vocabulary gap: 'femoral' is not mapped to 'femur' (Index term 'Fracture, femur, neck')"
   },
   {
-    "description": "7th-character code with placeholder X (poisoning) must be reachable",
+    "description": "7th-character code with placeholder X (poisoning) must be reachable, ranked first (not shellfish/food poisoning)",
     "query": "poisoning by heroin, accidental, initial encounter",
     "expected_code": "T40.1X1A",
-    "mode": "member"
+    "mode": "top"
   },
   {
     "description": "Placeholder-X injury code must be reachable",

@@ -28,6 +28,7 @@ SYNONYM_ONLY_MULTIPLIER = 0.8      # discount when a hit only matched via synony
 SINGLE_RESULT_MARGIN_RATIO = 1.4   # top score must exceed 2nd-best by this ratio to auto-return a single result
 MAX_RESULTS = 20
 FTS_CANDIDATE_LIMIT = 200          # how many raw FTS rows to pull per source table before aggregation
+INDEX_OWN_TERM_POOL_FACTOR = 3     # Index rows fetched per kept row, before the own-term filter
 GENERIC_TOKEN_DOC_FREQ_RATIO = 0.03  # tokens matching >3% of all diag rows are dropped from the OR query as noise
 
 LATERALITY_PATTERNS = {
@@ -239,14 +240,28 @@ def _search_tabular(conn, match_query, limit=FTS_CANDIDATE_LIMIT):
 def _search_index_terms(conn, match_query, limit=FTS_CANDIDATE_LIMIT):
     if not match_query:
         return []
-    return conn.execute(
+    # The parent path adds context and ranking signal, but a row must match
+    # the query in its own term text: otherwise every subterm under
+    # "Poisoning" (shellfish, mushrooms, ...) matches a query that merely
+    # says "poisoning". Scored on the full query as before, then filtered by a
+    # term_text-only match over the same rows (fts rowid == index_terms.id).
+    rows = conn.execute(
         """SELECT it.id, it.code, it.code_raw, it.term_text, it.xref_type, it.xref_target,
                   it.manif_code, it.level, bm25(fts_index_terms) AS rank
            FROM fts_index_terms fit JOIN index_terms it ON it.id = fit.term_id
            WHERE fts_index_terms MATCH ?
            ORDER BY rank LIMIT ?""",
-        (match_query, limit),
+        (match_query, limit * INDEX_OWN_TERM_POOL_FACTOR),
     ).fetchall()
+    if not rows:
+        return rows
+    ids = [r[0] for r in rows]
+    own = {r[0] for r in conn.execute(
+        f"SELECT rowid FROM fts_index_terms WHERE fts_index_terms MATCH ? "
+        f"AND rowid IN ({','.join('?' * len(ids))})",
+        [f"term_text : ({match_query})", *ids],
+    )}
+    return [r for r in rows if r[0] in own][:limit]
 
 
 def _search_note_references(conn, match_query, limit=FTS_CANDIDATE_LIMIT):
