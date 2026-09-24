@@ -115,7 +115,7 @@ CREATE VIRTUAL TABLE fts_tabular USING fts5(
     code UNINDEXED, short_title, long_desc, tokenize='porter'
 );
 CREATE VIRTUAL TABLE fts_index_terms USING fts5(
-    term_id UNINDEXED, code UNINDEXED, term_text, tokenize='porter'
+    term_id UNINDEXED, code UNINDEXED, term_text, path_text, tokenize='porter'
 );
 CREATE VIRTUAL TABLE fts_note_references USING fts5(
     ref_id UNINDEXED, code UNINDEXED, condition_text, tokenize='porter'
@@ -618,9 +618,20 @@ def build():
         "SELECT code, COALESCE(short_title, ''), COALESCE(long_desc, '') FROM tabular_codes "
         "WHERE seventh_char IS NULL"
     )
-    conn.execute(
-        "INSERT INTO fts_index_terms (term_id, code, term_text) "
-        "SELECT id, COALESCE(code, code_raw, ''), term_text FROM index_terms"
+    # path_text holds the term's ancestors ("Pain, joint" for the subterm
+    # "hip"), so a multi-word query matches the whole Index path a coder
+    # would follow instead of each bare subterm on its own.
+    by_id = {t["id"]: t for t in terms_out}
+    fts_rows = []
+    for t in terms_out:
+        chain, parent = [], t["parent_id"]
+        while parent is not None:
+            chain.append(by_id[parent]["term_text"])
+            parent = by_id[parent]["parent_id"]
+        fts_rows.append((t["id"], t["code"] or t["code_raw"] or "", t["term_text"], " ".join(reversed(chain))))
+    conn.executemany(
+        "INSERT INTO fts_index_terms (term_id, code, term_text, path_text) VALUES (?, ?, ?, ?)",
+        fts_rows,
     )
     conn.execute(
         "INSERT INTO fts_note_references (ref_id, code, condition_text) "

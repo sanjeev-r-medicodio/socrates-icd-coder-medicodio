@@ -29,8 +29,7 @@
     "description": "Specific site + laterality should rank the matching code first, not a generic code whose Excludes note mentions 'pain'",
     "query": "pain in right hip",
     "expected_code": "M25.551",
-    "mode": "top",
-    "known_issue": "Index subterms are matched without their parent path, so bare 'Pain' (R52) outranks 'Pain, joint, hip'"
+    "mode": "top"
   },
   {
     "description": "7th-character code (injury, initial encounter) must be reachable",

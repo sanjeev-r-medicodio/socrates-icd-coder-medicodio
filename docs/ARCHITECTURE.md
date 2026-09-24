@@ -61,6 +61,11 @@ ICD_CODER_LIVE_TESTS=1 python -m pytest    # also runs tests that call the model
 python tests/run_smoke.py                  # quick, dependency-free view of cases.json
 ```
 
+For ranking changes, also compare `python scripts/benchmark_search.py`
+before and after. It samples 300 Alphabetical Index paths and 300 Tabular
+titles (fixed seed) and reports top-1 and recall@20 against the code each
+one leads to -- a consistency check with the code set, not clinical accuracy.
+
 `tests/cases.json` is the search regression set. A case with a `known_issue`
 is a strict xfail: it documents a bug that isn't fixed yet, and the suite
 fails if it starts passing until the field is removed.
@@ -119,6 +124,15 @@ fails if it starts passing until the field is removed.
    titles/descriptions, Alphabetical Index terms, and the reverse
    `note_references` index (Code First / Use Additional / Code Also /
    Excludes1 / Excludes2 conditions).
+   - Each Index term is indexed together with its parent path (the subterm
+     "hip" under "Pain, joint" is searchable as "Pain joint hip"), so a
+     multi-word query matches the whole path a coder would follow rather
+     than every bare subterm named "pain" or "hip".
+   - Excludes text lists what a code does *not* cover, so it never boosts
+     its owner. When the query fully describes the excluded condition (e.g.
+     "joint pain" against R52's "joint pain (M25.5-)"), the owner is
+     penalized and the code the note points to gets the boost; partial
+     overlaps are ignored.
 5. Resolve every hit to billable leaf code(s):
    - a header/category code (e.g. `E08.32`, which requires a 6th character,
      or the stem `S72.001`, which requires a 7th) expands to all of its
