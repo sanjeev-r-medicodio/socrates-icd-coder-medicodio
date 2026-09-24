@@ -30,7 +30,7 @@
     "query": "pain in right hip",
     "expected_code": "M25.551",
     "mode": "top",
-    "known_issue": "excludes-note text boosts the code that excludes it (R52 ranks first)"
+    "known_issue": "Index subterms are matched without their parent path, so bare 'Pain' (R52) outranks 'Pain, joint, hip'"
   },
   {
     "description": "7th-character code (injury, initial encounter) must be reachable",

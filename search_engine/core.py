@@ -22,6 +22,7 @@ EXACT_MATCH_BOOST = 100.0          # added when the query text matches a title/t
 TABULAR_TITLE_WEIGHT = 3.0         # weight for Tabular short_title/long_desc FTS hits
 INDEX_TERM_WEIGHT = 2.5            # weight for Alphabetical Index term FTS hits
 NOTE_REFERENCE_WEIGHT = 1.0        # weight for reverse note-reference FTS hits (lowest priority)
+EXCLUDES_PENALTY_WEIGHT = 1.0      # penalty on a code whose Excludes note fully describes the query
 CROSS_REFERENCE_WEIGHT_MULTIPLIER = 0.6   # discount applied to one-hop see/seeAlso follow-ups
 SYNONYM_ONLY_MULTIPLIER = 0.8      # discount when a hit only matched via synonym expansion, not raw query text
 SINGLE_RESULT_MARGIN_RATIO = 1.4   # top score must exceed 2nd-best by this ratio to auto-return a single result
@@ -39,6 +40,16 @@ ENCOUNTER_PATTERNS = {
     "subsequent": r"\bsubsequent(?:\s+encounter)?\b",
     "sequela": r"\bsequela[e]?\b",
 }
+
+EXCLUDES_NOTE_TYPES = {"excludes1", "excludes2"}
+# Words that don't identify a condition, ignored when checking whether the
+# query fully describes an Excludes note's condition text.
+NOTE_COVERAGE_STOPWORDS = {
+    "a", "an", "and", "as", "by", "classified", "code", "due", "elsewhere", "for",
+    "in", "nec", "nos", "not", "of", "or", "other", "site", "such", "the", "to",
+    "type", "unspecified", "with", "without",
+}
+REF_CODE_RE = re.compile(r"^[A-Z][0-9A-Z]{1,6}$")
 
 TOKEN_RE = re.compile(r"[a-zA-Z0-9]+")
 FTS_SPECIAL_RE = re.compile(r'["*^]')
@@ -79,6 +90,7 @@ class SearchResult:
 @dataclass
 class _Candidate:
     source_scores: dict = field(default_factory=dict)  # source_key -> best score seen
+    penalties: dict = field(default_factory=dict)      # source_key -> largest penalty seen
     reasons: list = field(default_factory=list)
 
     def add(self, source_key: str, weight: float, reason: str):
@@ -87,9 +99,15 @@ class _Candidate:
         if reason not in self.reasons:
             self.reasons.append(reason)
 
+    def penalize(self, source_key: str, penalty: float, reason: str):
+        if penalty > self.penalties.get(source_key, 0.0):
+            self.penalties[source_key] = penalty
+        if reason not in self.reasons:
+            self.reasons.append(reason)
+
     @property
     def score(self) -> float:
-        return sum(self.source_scores.values())
+        return sum(self.source_scores.values()) - sum(self.penalties.values())
 
 
 # ---------------------------------------------------------------------------
@@ -233,7 +251,7 @@ def _search_note_references(conn, match_query, limit=FTS_CANDIDATE_LIMIT):
     if not match_query:
         return []
     return conn.execute(
-        """SELECT nr.code, nr.note_type, nr.condition_text, bm25(fts_note_references) AS rank
+        """SELECT nr.code, nr.note_type, nr.condition_text, nr.ref_code, bm25(fts_note_references) AS rank
            FROM fts_note_references fnr JOIN note_references nr ON nr.id = fnr.ref_id
            WHERE fts_note_references MATCH ?
            ORDER BY rank LIMIT ?""",
@@ -260,6 +278,33 @@ def _resolve_to_billable(conn, code_or_prefix: str):
         (code_or_prefix, code_or_prefix + "~"),
     )
     return [r[0] for r in cur.fetchall()]
+
+
+def _normalize_token(token: str) -> str:
+    return token[:-1] if len(token) > 3 and token.endswith("s") else token
+
+
+def _query_covers(query_tokens: set, condition_text: str) -> bool:
+    """True when every identifying word of an Excludes note's condition
+    (e.g. 'joint pain') appears in the query. A partial overlap -- usually
+    one generic word like 'pain' -- says nothing about whether the query is
+    the excluded condition, so it's ignored entirely."""
+    words = {_normalize_token(t) for t in _tokenize(condition_text)} - NOTE_COVERAGE_STOPWORDS
+    return bool(words) and words <= query_tokens
+
+
+def _ref_prefixes(ref_code: Optional[str]) -> list:
+    """Codes an Excludes note redirects to, as search prefixes: 'M25.5-' ->
+    ['M255'], 'B01.-, B02.-' -> ['B01', 'B02']. Block ranges ('C81-C86')
+    are skipped -- too broad to point at a code."""
+    if not ref_code:
+        return []
+    out = []
+    for part in ref_code.split(","):
+        part = part.strip().rstrip("-").rstrip(".").replace(".", "")
+        if REF_CODE_RE.match(part):
+            out.append(part)
+    return out
 
 
 def _fetch_code_display(conn, code: str):
@@ -377,10 +422,31 @@ def _search_impl(diagnosis: str, conn: sqlite3.Connection) -> SearchResult:
                 add_hit(billable_code, "index", base_score, f"Index term manifestation code for '{term_text}'")
 
     # --- Reverse note-reference hits ---
-    for code, note_type, condition_text, rank in _search_note_references(conn, match_query):
+    # codeFirst / useAdditionalCode / codeAlso text is a weak signal for the
+    # code that carries the note. Excludes text is the opposite: it lists
+    # conditions that code does NOT cover. So an Excludes hit never boosts
+    # its owner; when the query fully describes the excluded condition, the
+    # owner is penalized and the code the note points to gets the boost.
+    query_tokens = {_normalize_token(t) for t in all_tokens}
+    for code, note_type, condition_text, ref_code, rank in _search_note_references(conn, match_query):
         score = -rank * NOTE_REFERENCE_WEIGHT
+        if note_type not in EXCLUDES_NOTE_TYPES:
+            for billable_code in _resolve_to_billable(conn, code):
+                add_hit(billable_code, "notes", score, f"Note reference ({note_type}): '{condition_text}'")
+            continue
+        if not _query_covers(query_tokens, condition_text):
+            continue
         for billable_code in _resolve_to_billable(conn, code):
-            add_hit(billable_code, "notes", score, f"Note reference ({note_type}): '{condition_text}'")
+            candidates.setdefault(billable_code, _Candidate()).penalize(
+                "excluded", score * EXCLUDES_PENALTY_WEIGHT,
+                f"Excluded by {note_type} note: '{condition_text}'",
+            )
+        for prefix in _ref_prefixes(ref_code):
+            for billable_code in _resolve_to_billable(conn, prefix):
+                add_hit(
+                    billable_code, "notes", score,
+                    f"{note_type} note on {code} directs '{condition_text}' here ({ref_code})",
+                )
 
     if not candidates:
         return SearchResult(original_query, laterality, encounter, is_single=False, results=[])

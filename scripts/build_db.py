@@ -100,7 +100,8 @@ CREATE TABLE note_references (
     id             INTEGER PRIMARY KEY,
     code           TEXT REFERENCES tabular_codes(code),
     note_type      TEXT,
-    condition_text TEXT
+    condition_text TEXT,
+    ref_code       TEXT     -- trailing code reference, e.g. 'M25.5-' (where the condition IS coded)
 );
 CREATE INDEX idx_note_refs_code ON note_references(code);
 
@@ -594,9 +595,9 @@ def build():
         ref = extract_trailing_code_ref(note_text)
         condition_text = note_text[: note_text.rfind("(")].strip().strip(",").strip() if ref else note_text
         if condition_text:
-            note_refs.append((code, note_type, condition_text))
+            note_refs.append((code, note_type, condition_text, ref))
     conn.executemany(
-        "INSERT INTO note_references (code, note_type, condition_text) VALUES (?, ?, ?)",
+        "INSERT INTO note_references (code, note_type, condition_text, ref_code) VALUES (?, ?, ?, ?)",
         note_refs,
     )
     print(f"  {len(note_refs)} note_references rows")
