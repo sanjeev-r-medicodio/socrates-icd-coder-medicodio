@@ -1,5 +1,6 @@
 # Proof of Concept: Index-grounded ICD-10-CM coding for nextgen-codio-engine
 
+**Author:** Sanjeev Ragunathan · [LinkedIn](https://www.linkedin.com/in/sanjeev-ragunathan) · [GitHub](https://www.github.com/sanjeev-ragunathan)
 **Status:** POC complete and integration-ready (`icd-coder`, branch `making-it-integration-ready`, PRs #1–#9).
 **Proposal:** replace the engine's ICD tree traversal (S4.1 → S4.2 → S4.3) with this approach, behind a config switch, after a head-to-head evaluation on coder-final charts.
 **Date:** 2026-09-24
