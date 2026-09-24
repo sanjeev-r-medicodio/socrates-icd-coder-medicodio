@@ -85,6 +85,7 @@ For more info, check out the [`docs/`](docs/) folder:
   coder.
 - [`docs/DEMO_AUTOMATED.md`](docs/DEMO_AUTOMATED.md) — walkthrough of the
   Encounter note → code mode, with screenshots, and where it helps.
+- [`POC.md`](POC.md) — the proof of concept: idea, results, cost and the integration plan.
 - [`docs/INTEGRATION.md`](docs/INTEGRATION.md) — how to plug it into
   nextgen-codio-engine's ICD pipeline, one diagnosis at a time.
 - [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) — full technical
