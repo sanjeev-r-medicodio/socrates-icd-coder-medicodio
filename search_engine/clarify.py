@@ -1,7 +1,8 @@
 """AI-assisted clarifying question for ambiguous search() results.
 
-This is the ONLY file in this project that imports the Anthropic SDK, and the
-only place a network call or API cost can be incurred. search_engine/core.py
+Its one model call goes through search_engine/llm.py (fast tier), so importing
+this module needs no API key and a host can reroute the call with
+llm.set_backend(). search_engine/core.py
 stays pure, deterministic, and free to run -- this module sits strictly
 downstream of it: it receives an already-narrowed candidate list from
 core.search() and does exactly one narrow job -- phrase one clarifying
@@ -21,7 +22,6 @@ question is produced.
 """
 import json
 import logging
-import os
 import sqlite3
 from dataclasses import dataclass
 from pathlib import Path
@@ -29,59 +29,10 @@ from typing import Callable, List, Optional
 
 from pydantic import BaseModel
 
+from search_engine import llm
 from search_engine.core import CodeResult, DB_PATH
 
 logger = logging.getLogger("search_engine.clarify")
-
-# ---------------------------------------------------------------------------
-# .env loading + fail-fast credential check
-# ---------------------------------------------------------------------------
-
-def _load_dotenv():
-    env_path = Path(__file__).resolve().parent.parent / ".env"
-    if not env_path.exists():
-        return
-    for line in env_path.read_text().splitlines():
-        line = line.strip()
-        if not line or line.startswith("#") or "=" not in line:
-            continue
-        key, _, value = line.partition("=")
-        key = key.strip()
-        value = value.strip().strip('"').strip("'")
-        os.environ.setdefault(key, value)
-
-
-_load_dotenv()
-
-ANTHROPIC_API_KEY = os.environ.get("ANTHROPIC_API_KEY")
-CLAUDE_MODEL_FAST = os.environ.get("CLAUDE_MODEL_FAST")
-
-if not ANTHROPIC_API_KEY:
-    raise RuntimeError(
-        "ANTHROPIC_API_KEY is not set. Add it to .env at the project root "
-        "before importing search_engine.clarify."
-    )
-if not CLAUDE_MODEL_FAST:
-    raise RuntimeError(
-        "CLAUDE_MODEL_FAST is not set. Add it to .env at the project root "
-        "before importing search_engine.clarify."
-    )
-
-import anthropic  # noqa: E402  (import after the fail-fast checks, on purpose)
-
-# Constructed lazily on first real model call, not at import time -- building
-# the SDK client sets up its SSL/transport stack immediately, which is
-# unnecessary cost (and, on this dev machine's Homebrew Python, needs the same
-# DYLD_LIBRARY_PATH workaround as scripts/build_db.py -- see README) for any
-# CLI run that never actually hits clarify().
-_client: Optional["anthropic.Anthropic"] = None
-
-
-def _get_client() -> "anthropic.Anthropic":
-    global _client
-    if _client is None:
-        _client = anthropic.Anthropic(api_key=ANTHROPIC_API_KEY)
-    return _client
 
 # ---------------------------------------------------------------------------
 # Tunables
@@ -218,18 +169,14 @@ def _build_candidate_payload(conn: sqlite3.Connection, candidates: List[CodeResu
 # ---------------------------------------------------------------------------
 
 def _call_model(candidate_payload: List[dict]) -> dict:
-    response = _get_client().messages.parse(
-        model=CLAUDE_MODEL_FAST,
-        max_tokens=2048,
+    # Fast tier (CLAUDE_MODEL_FAST by default); a host can reroute it with
+    # llm.set_backend(). Nothing is read from the environment until here.
+    return llm.parse(
+        tier="fast",
         system=_SYSTEM_PROMPT,
-        messages=[{
-            "role": "user",
-            "content": f"Candidate codes:\n{json.dumps(candidate_payload, indent=2)}",
-        }],
-        output_format=_ClarifyQuestionModel,
+        user=f"Candidate codes:\n{json.dumps(candidate_payload, indent=2)}",
+        schema=_ClarifyQuestionModel,
     )
-    parsed = response.parsed_output
-    return parsed.model_dump()
 
 
 # ---------------------------------------------------------------------------

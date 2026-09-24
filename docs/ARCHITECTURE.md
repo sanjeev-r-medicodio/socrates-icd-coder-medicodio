@@ -106,6 +106,9 @@ fails if it starts passing until the field is removed.
   note-to-code loop for an upstream pipeline. See "The resolver" below.
 - `search_engine/llm.py` -- single structured-output model call with a
   replaceable backend (`llm.set_backend`).
+- `search_engine/integration.py` -- `code_diagnosis(dx, chart_text,
+  date_of_service)`: engine-facing wrapper returning an S4.3-shaped
+  `final_result`. See `docs/INTEGRATION.md`.
 - `search_engine/_env.py` -- shared `.env` loading, used by `note_agent.py`
   (`clarify.py` predates it and keeps its own copy, deliberately untouched).
 - `cli.py` -- terminal interface for single-diagnosis search (interactive +

@@ -1,6 +1,5 @@
-"""Shared .env loading for the AI-assisted modules (note_processor,
-diagnosis_extractor, note_answerer). clarify.py predates this helper and
-keeps its own copy deliberately untouched; new modules use this one."""
+"""Shared .env loading for the modules that call a model (llm.py, note_agent.py).
+Existing environment variables always win over .env values."""
 import os
 from pathlib import Path
 

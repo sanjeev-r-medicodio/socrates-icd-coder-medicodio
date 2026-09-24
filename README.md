@@ -85,6 +85,8 @@ For more info, check out the [`docs/`](docs/) folder:
   coder.
 - [`docs/DEMO_AUTOMATED.md`](docs/DEMO_AUTOMATED.md) — walkthrough of the
   Encounter note → code mode, with screenshots, and where it helps.
+- [`docs/INTEGRATION.md`](docs/INTEGRATION.md) — how to plug it into
+  nextgen-codio-engine's ICD pipeline, one diagnosis at a time.
 - [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) — full technical
   reference: setup, project layout, how the search-ranking pipeline works,
   how the clarifying-question loop is grounded and validated, and the web
