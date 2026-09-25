@@ -1,7 +1,7 @@
 # Proof of Concept: Socrates, index-grounded ICD-10-CM coding for nextgen-codio-engine
 
 **Author:** Sanjeev Ragunathan · [LinkedIn](https://www.linkedin.com/in/sanjeev-ragunathan) · [GitHub](https://www.github.com/sanjeev-ragunathan)  
-**Status:** POC complete and integration-ready. Socrates (`socrates-icd-coder`); developed in `medicodio-interview` PRs #1–#13.  
+**Status:** POC complete and integration-ready. Socrates, nextgen-codio-engine edition (`socrates-icd-coder-medicodio`); developed in `medicodio-interview` PRs #1–#13.  
 **Proposal:** replace the engine's ICD tree traversal (S4.1 → S4.2 → S4.3) with this approach, behind a config switch, after a head-to-head evaluation on coder-final charts.  
 **Date:** 2026-09-24  
 
@@ -283,7 +283,7 @@ final_result = integration.code_diagnosis(dx, chart_text, date_of_service)
 ## 11. Reproducing these results
 
 ```bash
-cd socrates-icd-coder
+cd socrates-icd-coder-medicodio
 python -m venv .venv && .venv/Scripts/pip install -r requirements-dev.txt   # or .venv/bin on macOS/Linux
 python scripts/build_db.py                          # builds data/icd10_fy2026.db and data/icd10_fy2027.db
 python -m pytest                                    # offline suite

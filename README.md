@@ -1,4 +1,4 @@
-# Socrates — ICD-10-CM coding by asking the right questions
+# Socrates — nextgen-codio-engine edition
 
 <p align="center">
   <img src="images/readme_banner.png" alt="banner" width="60%">
