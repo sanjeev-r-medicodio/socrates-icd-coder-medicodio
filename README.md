@@ -6,11 +6,6 @@
 
 **Author:** Sanjeev Ragunathan · [LinkedIn](https://www.linkedin.com/in/sanjeev-ragunathan) · [GitHub](https://www.github.com/sanjeev-ragunathan)
 
-> This is the **nextgen-codio-engine integration edition** of Socrates: the
-> standalone project plus the per-diagnosis resolver, the engine-facing
-> `code_diagnosis()` interface, the POC and the integration plan. For the
-> standalone project, see [`socrates-icd-coder`](https://github.com/sanjeev-r-medicodio/socrates-icd-coder).
-
 Socrates turns a diagnosis or a full clinical note into a precise, billable ICD-10-CM
 code — with a clear, auditable trail of how it got there.
 
@@ -121,12 +116,3 @@ For more info, check out the [`docs/`](docs/) folder:
   reference: setup, project layout, how the search-ranking pipeline works,
   how the clarifying-question loop is grounded and validated, and the web
   API design.
-
-## Origin
-
-Socrates started as the `icd-coder` folder of the
-[`medicodio-interview`](https://github.com/sanjeev-r-medicodio/medicodio-interview)
-repository and was extracted into this repo with its commit history. PR
-numbers in commit messages (#1–#13) refer to that repository. The
-standalone edition, [`socrates-icd-coder`](https://github.com/sanjeev-r-medicodio/socrates-icd-coder),
-shares the same history up to the search fixes.
