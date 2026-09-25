@@ -1,6 +1,6 @@
-# Integrating icd-coder into nextgen-codio-engine
+# Integrating Socrates into nextgen-codio-engine
 
-For engineers wiring icd-coder into the engine's ICD pipeline as an alternative
+For engineers wiring Socrates (`socrates-icd-coder`) into the engine's ICD pipeline as an alternative
 to the S4.1 → S4.2 → S4.3 tree traversal. Everything upstream (DXEX diagnosis
 extraction) and downstream (low-confidence and duplicate filters, injury
 pipeline, general coding guidelines, ICD↔CPT linking, sequencing) stays as it
@@ -10,7 +10,7 @@ is.
 
 Per diagnosis, the engine currently runs chapter routing (S4.1), subchapter /
 section routing (S4.2) and final code selection (S4.3), then merges a separate
-7th character. icd-coder does that whole step for one diagnosis:
+7th character. Socrates does that whole step for one diagnosis:
 
 1. Deterministic search over the CMS Tabular List and Alphabetical Index for
    the fiscal year in effect on the date of service. Candidates always come
@@ -68,7 +68,7 @@ final_result = integration.code_diagnosis(
    read-only SQLite connection.
 2. **Skip the 7th-character merge** for these results. `icd_main.py`
    currently appends `selected_seventh_character` to `icd_code`
-   (`build_full_icd_seventh_char`). icd-coder's code is already complete, so
+   (`build_full_icd_seventh_char`). Socrates' code is already complete, so
    branch on `final_result["selector"] == "icd_coder"`.
 3. **Keep the C23 drop.** `seventh_character_unresolved=True` means the same
    thing it does today: drop the unbillable stem and log it for review.
@@ -111,7 +111,7 @@ ceiling from S2 completeness can be applied on top as `min(confidence, ceiling)`
 
 ## Code sets
 
-icd-coder ships FY2026 (effective 2025-10-01 to 2026-09-30) and FY2027
+Socrates ships FY2026 (effective 2025-10-01 to 2026-09-30) and FY2027
 (effective from 2026-10-01) and picks one by `date_of_service`. A date outside
 those years raises `code_sets.UnsupportedDateOfService`: surface it, don't
 guess. Check that the engine's `icd_kb_preview.xlsx` covers the same fiscal
@@ -121,8 +121,8 @@ accuracy problems.
 ## Specialty shortlists
 
 The engine restricts gastro S4.3 candidates to `icd_Kb_gastro_54.csv`.
-icd-coder doesn't take a shortlist yet. For a like-for-like comparison, either
-turn the shortlist off for the tree run or filter icd-coder's final code
+Socrates doesn't take a shortlist yet. For a like-for-like comparison, either
+turn the shortlist off for the tree run or filter Socrates' final code
 against it and count out-of-list codes separately.
 
 ## Not covered yet
@@ -133,7 +133,7 @@ against it and count out-of-list codes separately.
   three as XML.
 - Colloquial vocabulary gaps ("ingrown", "femoral" → femur) are tracked as
   known issues in `tests/cases.json`.
-- icd-coder codes one diagnosis per call. Code-first / use-additional pairing,
+- Socrates codes one diagnosis per call. Code-first / use-additional pairing,
   combination codes across diagnoses and sequencing remain the engine's
   general-coding-guidelines stage.
 

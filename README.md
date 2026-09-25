@@ -1,10 +1,12 @@
-# ICD-10-CM Diagnosis Coding Agent
+# Socrates — ICD-10-CM coding by asking the right questions
 
 <p align="center">
   <img src="images/readme_banner.png" alt="banner" width="60%">
 </p>
 
-Turn a diagnosis or a full clinical note into a precise, billable ICD-10-CM
+**Author:** Sanjeev Ragunathan · [LinkedIn](https://www.linkedin.com/in/sanjeev-ragunathan) · [GitHub](https://www.github.com/sanjeev-ragunathan)
+
+Socrates turns a diagnosis or a full clinical note into a precise, billable ICD-10-CM
 code — with a clear, auditable trail of how it got there.
 
 Type "hip pain" and it'll ask you which hip. Paste a whole encounter note and
@@ -12,6 +14,28 @@ it'll read it, work out what's actually being diagnosed, and resolve straight
 through to the exact code — narrowing from thousands of possibilities down to
 one, and quoting the exact sentence in the note that justified every step
 along the way.
+
+## Why "Socrates"?
+
+Socrates didn't lecture people into the truth. He asked them a sequence of
+precise questions, and let their own answers rule out everything that
+couldn't be true until only the answer was left. That's the Socratic method,
+and it's exactly how this system codes:
+
+- **It never proposes a code.** The candidates come only from the official
+  CMS ICD-10-CM code set, found by a deterministic search.
+- **It asks, one question at a time.** Each question is multiple choice,
+  and its options split the real candidates, e.g. "Is the bleeding
+  documented?" or "Which hip?".
+- **The chart answers.** Each answer must quote the note word for word, and
+  the quote is checked against the note. If the chart doesn't say, that's a
+  valid answer too; it isn't a cue to guess.
+- **It narrows until one billable code is left.**
+
+The usual approach is a tree: pick a chapter, then a section, then a code.
+If the first answer is wrong, every step after it searches the wrong branch.
+Socrates makes no such early commitment. Every plausible code stays in play
+until the chart's own words rule it out.
 
 ## Why it's trustworthy
 
@@ -92,3 +116,10 @@ For more info, check out the [`docs/`](docs/) folder:
   reference: setup, project layout, how the search-ranking pipeline works,
   how the clarifying-question loop is grounded and validated, and the web
   API design.
+
+## Origin
+
+Socrates started as the `icd-coder` folder of the
+[`medicodio-interview`](https://github.com/sanjeev-r-medicodio/medicodio-interview)
+repository and was extracted into this repo with its commit history. PR
+numbers in commit messages (#1–#13) refer to that repository.
