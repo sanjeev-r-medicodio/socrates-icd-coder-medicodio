@@ -1,9 +1,9 @@
-# Proof of Concept: Index-grounded ICD-10-CM coding for nextgen-codio-engine
+# Proof of Concept: Socrates, index-grounded ICD-10-CM coding for nextgen-codio-engine
 
-**Author:** Sanjeev Ragunathan · [LinkedIn](https://www.linkedin.com/in/sanjeev-ragunathan) · [GitHub](https://www.github.com/sanjeev-ragunathan)
-**Status:** POC complete and integration-ready (`icd-coder`, branch `making-it-integration-ready`, PRs #1–#9).
-**Proposal:** replace the engine's ICD tree traversal (S4.1 → S4.2 → S4.3) with this approach, behind a config switch, after a head-to-head evaluation on coder-final charts.
-**Date:** 2026-09-24
+**Author:** Sanjeev Ragunathan · [LinkedIn](https://www.linkedin.com/in/sanjeev-ragunathan) · [GitHub](https://www.github.com/sanjeev-ragunathan)  
+**Status:** POC complete and integration-ready. Socrates (`socrates-icd-coder`); developed in `medicodio-interview` PRs #1–#13.  
+**Proposal:** replace the engine's ICD tree traversal (S4.1 → S4.2 → S4.3) with this approach, behind a config switch, after a head-to-head evaluation on coder-final charts.  
+**Date:** 2026-09-24  
 
 ---
 
@@ -78,7 +78,7 @@ ICD↔CPT linking, sequencing
 
 ## 4. How it is better
 
-| | Current engine (S4.1–S4.3) | icd-coder |
+| | Current engine (S4.1–S4.3) | Socrates |
 |---|---|---|
 | Where candidates come from | LLM routing down a tree, plus optional RAG (Pinecone) | Deterministic search over the CMS Index and Tabular List |
 | Can the output be a code that wasn't a candidate? | **Yes** (P1, open) | **No, by construction.** Options are validated against the candidate set. |
@@ -95,7 +95,7 @@ ICD↔CPT linking, sequencing
 
 ## 5. What it solves
 
-| Engine problem | How icd-coder addresses it |
+| Engine problem | How Socrates addresses it |
 |---|---|
 | P1: off-shortlist codes | Candidates come only from the code set; each option list is validated as an exact partition of the candidates. |
 | P2: compounding tree errors | There's no routing tree. Every candidate stays reachable until the chart rules it out. |
@@ -243,14 +243,14 @@ final_result = integration.code_diagnosis(dx, chart_text, date_of_service)
 | 5 | LLM backend adapter over `call_llm_wrapper` (fallback, record/replay, cost tracking); register both prompts in the prompt engine | `general_modules/llm/wrapper.py`, `prompts/registry.py` |
 | 6 | Apply the S2 confidence ceiling as `min(confidence, ceiling)` | aggregation, before the low-confidence filter |
 | 7 | Store the trace in `tree_traversal.chapter_routing[i]` for `/code-audit`, `block_sim`, icd-detective | `icd_main.py` |
-| 8 | Package icd-coder (library + two SQLite code-set files, built from `data/raw/`); no service to run | deployment |
+| 8 | Package Socrates (library + two SQLite code-set files, built from `data/raw/`); no service to run | deployment |
 
 ### 9.3 Phased rollout
 
 | Phase | What | Exit criterion |
 |---|---|---|
 | **0. Evaluation harness** | Pull finished encounters with coder-final codes from the PE API (`qa/scripts/coding_accuracy_diff.py` already reads them). Store DXEX phrases and coder codes as a gold set of at least 200 gastro encounters plus general ones. | Gold set frozen |
-| **1. Offline head-to-head** | Run the same DXEX phrases through the tree and icd-coder. Compare exact code, 3-character category, no-code rate, off-shortlist rate, rounds, latency and cost. Report injury/7th-character and gastro-shortlist cases separately. | icd-coder ≥ tree on exact match, with no regression on any reported slice |
+| **1. Offline head-to-head** | Run the same DXEX phrases through the tree and Socrates. Compare exact code, 3-character category, no-code rate, off-shortlist rate, rounds, latency and cost. Report injury/7th-character and gastro-shortlist cases separately. | Socrates ≥ tree on exact match, with no regression on any reported slice |
 | **2. Engine wiring** | Engine changes 1–8 behind the flag, default `"tree"`. Parity tests with record/replay. | Flag off = byte-identical output; flag on = passes the Phase 1 set |
 | **3. Shadow mode** | Both selectors run on live charts, and only the tree result is pushed. Diffs go to `/code-audit`. | 2 weeks with no unexplained regressions; coder review of the diffs |
 | **4. Switch per bundle** | Turn on `"icd_coder"` for one bundle (e.g. gastro_op), monitor coder edit rate, then expand. | Coder edit rate ≤ baseline |
@@ -263,7 +263,7 @@ final_result = integration.code_diagnosis(dx, chart_text, date_of_service)
   - load the Drug, Neoplasm and External Cause tables;
   - cut the number of questions per diagnosis (latency and cost);
   - close the vocabulary gaps.
-- **Ownership:** decide whether icd-coder is vendored into the engine repository or imported as a pinned package.
+- **Ownership:** decide whether Socrates is vendored into the engine repository or imported as a pinned package.
 
 ---
 
@@ -283,7 +283,7 @@ final_result = integration.code_diagnosis(dx, chart_text, date_of_service)
 ## 11. Reproducing these results
 
 ```bash
-cd icd-coder
+cd socrates-icd-coder
 python -m venv .venv && .venv/Scripts/pip install -r requirements-dev.txt   # or .venv/bin on macOS/Linux
 python scripts/build_db.py                          # builds data/icd10_fy2026.db and data/icd10_fy2027.db
 python -m pytest                                    # offline suite
