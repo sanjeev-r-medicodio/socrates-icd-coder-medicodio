@@ -1,6 +1,6 @@
 # Integrating Socrates into nextgen-codio-engine
 
-For engineers wiring Socrates (`socrates-icd-coder`) into the engine's ICD pipeline as an alternative
+For engineers wiring Socrates (`socrates-icd-coder-medicodio`) into the engine's ICD pipeline as an alternative
 to the S4.1 → S4.2 → S4.3 tree traversal. Everything upstream (DXEX diagnosis
 extraction) and downstream (low-confidence and duplicate filters, injury
 pipeline, general coding guidelines, ICD↔CPT linking, sequencing) stays as it
